@@ -1,0 +1,16 @@
+# =========== SQL project ===========
+
+# Игнорируем файлы с данными
+tutorials/
+pictures/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.log
+
+# Переменные окружения
+.env
+.envrc
+
+#
