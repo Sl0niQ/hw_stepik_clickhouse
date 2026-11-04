@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS edu_silver.ym_visits
 	mobile_phone_model LowCardinality(String) COMMENT 'Название модели устройства',
 	resolution_width UInt16 COMMENT 'Разрешение экрана устройства в пикселях по ширине',
 	resolution_height UInt16 COMMENT 'Разрешение экрана устройства в пикселях по высоте',
-	is_robot UInt8 COMMENT 'Флаг антифрод-системы',
+	--is_robot UInt8 COMMENT 'Флаг антифрод-системы', - боты отсеяны фильтрацией
 	is_not_bounce UInt8 COMMENT 'Флаг не-отказа',
 	goals_reached Array(UInt32) COMMENT 'Массив числовых идентификаторов целей, достигнутых в рамках хита',
 	param_order_id String COMMENT 'Номер оформленного заказа',
@@ -49,10 +49,13 @@ CREATE TABLE IF NOT EXISTS edu_silver.ym_visits
 )
 ENGINE = ReplacingMergeTree(_processed_time)
 PARTITION BY toYYYYMM(event_date)
-ORDER BY (event_date, user_id, url)
+-- ORDER BY (event_date, user_id, url) - поле event_date удаляет уникальные записи внутри суток
+ORDER BY (event_time, user_id, url)
 TTL _processed_time + INTERVAL 3 YEAR DELETE
 SETTINGS index_granularity = 8192
 COMMENT 'Таблица для очищенных данных (серебряный слой)';
+
+-- DROP TABLE edu_silver.ym_visits
 -- ***************************************************************
 
 -- 4.3.3
@@ -105,3 +108,5 @@ WHERE name LIKE 'edu%';
 
 DESCRIBE TABLE edu_silver.ym_visits;
 DESCRIBE TABLE edu_dlq.ym_visits;
+
+SELECT * FROM edu_bronze.ym_visits;
