@@ -1,82 +1,114 @@
 -- 4.4 Lesson
--- Создание таблиц для хранения очищенных и невалидных данных
+-- Автоматизация загрузки данных
 -- ***************************************************************
 
 -- 4.4.1 
 -- Создание схемы для скриптов
-
 CREATE DATABASE IF NOT EXISTS edu_etl
-COMMENT 'Скрипты загрузки данных';
+COMMENT 'Схема для скриптов загрузки данных';
 -- ***************************************************************
 
 -- 4.4.2
--- Создание таблицы для очищенных данных
--- - за исключением тех. полей копирует структуру таблицы сырых данных из бронзового слоя
--- - движок ReplacingMergeTree с полем времени обработки в качестве столбца версии
-
-CREATE MATERIALIZED VIEW IF NOT EXISTS {Название схемы}.mv_{Слой-источник}_to_{Слой-приемник}_{Название таблицы}
-TO {Название схемы}.{Название таблицы}
+-- Создание материализованного представления для загрузки очищенных данных в серебряную таблицу
+CREATE MATERIALIZED VIEW IF NOT EXISTS edu_etl.mv_bronze_to_silver
+TO edu_silver.ym_visits
 AS
--- Вставьте сюда ваш запрос
-{Запрос на очистку и трансформацию}
-
-Здесь логика фильтрации меняется на обратную, а трансформация данных (REPLACE и EXCEPT) не используется, 
-так как нам нужно сохранить невалидную строку в исходном виде.
-
-
-
--- DROP TABLE edu_silver.ym_visits
+	SELECT 	* 
+			-- исключение полей is_robot и _ingestion_time
+			EXCEPT(is_robot, _ingestion_time) 
+			REPLACE (
+				-- извлечение корректной даты из поля event_time
+				toDate(event_time) AS event_date,
+				-- извлечение корректного домена из поля referer
+				domain(referer) AS referer_domain,
+				-- извлечение корректного домена из поля url
+				domain(url) AS url_domain
+			)
+	FROM edu_bronze.ym_visits
+	-- исключение записей от робота и с нулевым регионом
+	WHERE is_robot = 0
+	AND region_id <> 0
+;
 -- ***************************************************************
 
--- 4.3.3
--- Создание таблицы каратнина
---	- копирует структуру таблицы сырых данных из бронзового слоя
---	- значение _ingestion_time берется из таблицы бронзового слоя
+-- 4.4.3
+-- Создание материализованного представления для загрузки невалидных данных в таблицу карантина
+CREATE MATERIALIZED VIEW IF NOT EXISTS edu_etl.mv_bronze_to_dlq
+TO edu_dlq.ym_visits
+AS
+	SELECT 	* 
+	FROM edu_bronze.ym_visits
+	WHERE 
+		is_robot <> 0
+		OR is_robot IS NULL
+		OR region_id = 0
+		OR region_id IS NULL
+;
 
-CREATE TABLE IF NOT EXISTS edu_dlq.ym_visits
-(
-    event_date Date COMMENT 'Дата посещения UTC-0',
-	event_time DateTime COMMENT 'Дата и время посещения UTC-0',
-	user_id UInt64 COMMENT 'Идентификатор пользователя',
-	watch_id UInt64 COMMENT 'Идентификатор просмотра страницы',
-	traffic_source_id Int8 COMMENT 'Код типа источника трафика',
-	utm_source LowCardinality(String) COMMENT 'UTM-метка источника трафика',
-	utm_medium LowCardinality(String) COMMENT 'UTM-метка типа трафика',
-	utm_campaign LowCardinality(String) COMMENT 'UTM-метка названия рекламной кампании',
-	utm_content LowCardinality(String) COMMENT 'UTM-метка содержания объявления или дополнительной информации',
-	utm_term String COMMENT 'UTM-метка ключевого слова или поисковой фразы из рекламы',
-	search_phrase LowCardinality(String) COMMENT 'Текст поискового запроса',
-	referer_domain LowCardinality(String) COMMENT 'Домен страницы источника перехода',
-	referer String COMMENT 'Полный URL-адрес страницы, с которой пользователь перешел на текущую страницу',
-	url_domain LowCardinality(String) COMMENT 'Домен сайта, на котором происходит просмотр',
-	url String COMMENT 'Полный адрес просматриваемой страницы сайта',
-	region_id UInt32 COMMENT 'Числовой идентификатор географического региона пользователя',
-	os UInt8 COMMENT 'Внутренний числовой идентификатор операционной системы',
-	user_agent UInt8 COMMENT 'Внутренний числовой идентификатор браузера',
-	is_mobile UInt8 COMMENT 'Флаг типа устройства',
-	mobile_phone UInt8 COMMENT 'Идентификатор бренда мобильного телефона',
-	mobile_phone_model LowCardinality(String) COMMENT 'Название модели устройства',
-	resolution_width UInt16 COMMENT 'Разрешение экрана устройства в пикселях по ширине',
-	resolution_height UInt16 COMMENT 'Разрешение экрана устройства в пикселях по высоте',
-	is_robot UInt8 COMMENT 'Флаг антифрод-системы',
-	is_not_bounce UInt8 COMMENT 'Флаг не-отказа',
-	goals_reached Array(UInt32) COMMENT 'Массив числовых идентификаторов целей, достигнутых в рамках хита',
-	param_order_id String COMMENT 'Номер оформленного заказа',
-	param_price UInt32 COMMENT 'Сумма заказа',
-	_ingestion_time DateTime COMMENT 'Дата и время загрузки данных',
-	_source_system LowCardinality(String) COMMENT 'Источник данных'
+-- Загрузка данных за 2013-11-12 в бронзовую таблицу
+INSERT INTO edu_bronze.ym_visits (
+	event_date			,
+	event_time			,
+	user_id				,
+	watch_id			,
+	traffic_source_id	,
+	utm_source			,
+	utm_medium			,
+	utm_campaign		,
+	utm_content			,
+	utm_term			,
+	search_phrase		,
+	referer_domain		,
+	referer				,
+	url_domain			,
+	url					,
+	region_id			,
+	os					,
+	user_agent			,
+	is_mobile			,
+	mobile_phone		,
+	mobile_phone_model	,
+	resolution_width	,
+	resolution_height	,
+	is_robot			,
+	is_not_bounce		,
+	goals_reached		,
+	param_order_id		,
+	param_price			
 )
-ENGINE = MergeTree
-PARTITION BY toYYYYMM(event_date)
-ORDER BY (event_date, user_id)
-TTL _ingestion_time + toIntervalYear(3)
-SETTINGS index_granularity = 8192
-COMMENT 'Таблица для невалидных данных';
-
-SELECT * FROM system.databases
-WHERE name LIKE 'edu%';
-
-DESCRIBE TABLE edu_silver.ym_visits;
-DESCRIBE TABLE edu_dlq.ym_visits;
-
-SELECT * FROM edu_bronze.ym_visits;
+SELECT 
+	EventDate			,
+	EventTime			,
+	UserID				,
+	WatchID				,
+	TraficSourceID		,
+	UTMSource			,
+	UTMMedium			,
+	UTMCampaign			,
+	UTMContent			,
+	UTMTerm				,
+	SearchPhrase		,
+	RefererDomain		,
+	Referer				,
+	URLDomain			,
+	URL					,
+	RegionID			,
+	OS					,
+	UserAgent			,
+	IsMobile			,
+	MobilePhone			,
+	MobilePhoneModel	,
+	ResolutionWidth		,
+	ResolutionHeight	,
+	IsRobot				,
+	IsNotBounce			,
+	GoalsReached		,
+	ParamOrderID		,
+	ParamPrice	
+FROM url(
+	'https://huggingface.co/datasets/ivannatarov/clickhouse_course/resolve/main/parquet-files/hits_2013-11-12.parquet',
+	'Parquet'
+)
+SETTINGS
+	max_http_get_redirects = 10,
+	min_insert_block_size_rows = 100000;
