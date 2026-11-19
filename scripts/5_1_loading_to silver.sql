@@ -109,32 +109,3 @@ WHERE
 		OR region_id IS NULL
 	)
 	AND event_date = '2013-11-11'
-
-SELECT
-    query_id,
-    user,
-    client_hostname,
-    query,
-    event_time,
-    type,
-    exception
-FROM system.query_log
-WHERE event_time > now() - INTERVAL 31 DAY
-AND query LIKE '%dlq%'
-ORDER BY event_time DESC
-LIMIT 100;
-
-SELECT
-    query_id,
-    event_time,
-    type,
-    exception,
-    query
-FROM system.query_log
-WHERE type = 'ExceptionBeforeStart'
-  AND event_time > now() - INTERVAL 100 MINUTE
-ORDER BY event_time DESC;
-
-SET log_queries_min_type = 'EXCEPTION_BEFORE_START';
-
-SHOW CREATE TABLE edu_etl.mv_bronze_to_dlq;
